@@ -1,0 +1,53 @@
+╔══════════════════════════════════════════════════════════════╗
+║              query-lens — Helm Install Complete              ║
+╚══════════════════════════════════════════════════════════════╝
+
+Release: {{ .Release.Name }}
+Namespace: {{ .Values.global.namespace }}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  TENANT API (HTTP)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+{{- if .Values.ingress.enabled }}
+  Add this to /etc/hosts (use `minikube ip` to get the IP):
+    $(minikube ip)  {{ .Values.ingress.host }}
+
+  Then access via:
+    http://{{ .Values.ingress.host }}/api/tenants
+
+  Enable the NGINX Ingress addon if not already:
+    minikube addons enable ingress
+{{- end }}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  KAFKA (TCP)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Bootstrap server for local clients:
+    $(minikube ip):{{ .Values.kafka.service.nodePort }}
+
+  In-cluster bootstrap (from other pods):
+    kafka.{{ .Values.global.namespace }}.svc.cluster.local:9092
+
+  Test with kcat:
+    kcat -b $(minikube ip):{{ .Values.kafka.service.nodePort }} -L
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  POSTGRES (TCP)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  In-cluster connection string:
+    jdbc:postgresql://postgres.{{ .Values.global.namespace }}.svc.cluster.local:5432/{{ .Values.postgres.auth.database }}
+
+  Port-forward for direct local access:
+    kubectl port-forward -n {{ .Values.global.namespace }} svc/postgres 5432:5432
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  USEFUL COMMANDS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Watch all pods come up:
+    kubectl get pods -n {{ .Values.global.namespace }} -w
+
+  View tenant-api logs:
+    kubectl logs -n {{ .Values.global.namespace }} -l app=tenant-api -f
+
+  Helm dry-run (preview rendered templates without applying):
+    helm template ql ./helm/query-lens -f values.yaml -f values-local.yaml

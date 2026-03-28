@@ -1,0 +1,61 @@
+{{/*
+  CONCEPT: Two services for Kafka
+
+  1. kafka-headless (clusterIP: None)
+     Required by the StatefulSet. Creates per-pod DNS:
+       kafka-0.kafka-headless.query-lens.svc.cluster.local
+     This is what KAFKA_ADVERTISED_LISTENERS uses — a stable address that
+     survives pod restarts. Without this, clients would lose the broker address.
+
+  2. kafka (NodePort or ClusterIP)
+     For external access locally (NodePort exposes on minikube's IP).
+     Apps inside the cluster use:  kafka.query-lens.svc.cluster.local:9092
+     Local clients (kcat, your IDE Kafka plugin) use: $(minikube ip):30092
+
+  CONCEPT: {{ if eq ... }} conditional
+    Go template conditional — only emits the nodePort line when service type
+    is NodePort. Prevents invalid YAML when type is ClusterIP (which doesn't
+    support nodePort).
+*/}}
+
+# Headless service for StatefulSet stable DNS.
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka-headless
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "query-lens.labels" . | nindent 4 }}
+    app: kafka
+spec:
+  clusterIP: None
+  selector:
+    app: kafka
+  ports:
+    - name: broker
+      port: 9092
+      targetPort: 9092
+    - name: controller
+      port: 9093
+      targetPort: 9093
+---
+# External / in-cluster access service.
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "query-lens.labels" . | nindent 4 }}
+    app: kafka
+spec:
+  type: {{ .Values.kafka.service.type }}
+  selector:
+    app: kafka
+  ports:
+    - name: broker
+      port: 9092
+      targetPort: 9092
+      {{- if eq .Values.kafka.service.type "NodePort" }}
+      nodePort: {{ .Values.kafka.service.nodePort }}
+      {{- end }}

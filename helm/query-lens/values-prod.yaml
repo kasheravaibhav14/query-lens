@@ -1,0 +1,46 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# values-prod.yaml — Production cluster overrides (EKS / GKE / AKS).
+#
+# Usage (never commit real passwords — inject them at deploy time):
+#   helm upgrade --install ql ./helm/query-lens \
+#     -f values.yaml -f values-prod.yaml \
+#     --set postgres.auth.password=$DB_PASS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+postgres:
+  auth:
+    password: ""    # injected via --set or external secrets operator at deploy time
+  storage:
+    size: 20Gi
+    storageClass: gp3     # AWS EKS; swap for pd-ssd on GKE
+
+kafka:
+  storage:
+    size: 50Gi
+    storageClass: gp3
+  service:
+    # ClusterIP in prod — apps connect internally. Expose via a separate
+    # LoadBalancer or VPN if external client access is needed.
+    type: ClusterIP
+
+tenantApi:
+  replicas: 2
+  image:
+    # Point to your container registry:
+    repository: 123456789.dkr.ecr.us-east-1.amazonaws.com/query-lens/tenant-api
+    pullPolicy: Always
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+
+ingress:
+  host: api.querylens.io    # your real domain

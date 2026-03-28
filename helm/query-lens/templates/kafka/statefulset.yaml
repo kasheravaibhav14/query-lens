@@ -1,0 +1,112 @@
+{{/*
+  CONCEPT: KRaft Mode (Kafka without Zookeeper)
+    In KRaft, Kafka runs an embedded Raft consensus protocol to manage cluster
+    metadata. A node can be a "broker" (serves producers/consumers), a
+    "controller" (manages metadata/elections), or both — which is what we use
+    here for a single-node setup.
+
+  CONCEPT: Stable DNS for Kafka Advertised Listeners
+    Kafka brokers tell clients where to connect via "advertised.listeners".
+    This MUST be a stable, resolvable address. We use the StatefulSet pod's
+    stable DNS name:
+      kafka-0.kafka-headless.<namespace>.svc.cluster.local
+    If we used a pod IP here, the address would break every time the pod
+    restarted (IPs are ephemeral). This is why StatefulSet + headless service
+    is mandatory for Kafka.
+
+  CONCEPT: KAFKA_ env var naming convention
+    The apache/kafka image reads env vars prefixed with KAFKA_ and converts
+    them to kafka properties (underscores → dots):
+      KAFKA_LOG_DIRS → log.dirs
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR → offsets.topic.replication.factor
+    Exception: CLUSTER_ID has no KAFKA_ prefix — it's used by the startup
+    script to format the KRaft metadata log on first boot.
+*/}}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: kafka
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "query-lens.labels" . | nindent 4 }}
+    app: kafka
+spec:
+  serviceName: kafka-headless    # must match the headless Service in service.yaml
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kafka
+  template:
+    metadata:
+      labels:
+        app: kafka
+        {{- include "query-lens.selectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+        - name: kafka
+          image: "{{ .Values.kafka.image.repository }}:{{ .Values.kafka.image.tag }}"
+          ports:
+            - name: broker
+              containerPort: 9092
+            - name: controller
+              containerPort: 9093
+          env:
+            # Node identity — must be unique per broker in a multi-node cluster.
+            - name: KAFKA_NODE_ID
+              value: "1"
+            # This node acts as both broker (serves clients) and controller
+            # (participates in KRaft metadata consensus). Separate roles in prod.
+            - name: KAFKA_PROCESS_ROLES
+              value: "broker,controller"
+            # Internal listeners: PLAINTEXT for clients, CONTROLLER for KRaft.
+            - name: KAFKA_LISTENERS
+              value: "PLAINTEXT://:9092,CONTROLLER://:9093"
+            # What clients are told to connect to. Must be stable DNS.
+            - name: KAFKA_ADVERTISED_LISTENERS
+              value: "PLAINTEXT://kafka-0.kafka-headless.{{ .Values.global.namespace }}.svc.cluster.local:9092"
+            - name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP
+              value: "PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT"
+            # The KRaft quorum — all controller nodes listed as id@host:port.
+            # For 3-node HA: "1@kafka-0...:9093,2@kafka-1...:9093,3@kafka-2...:9093"
+            - name: KAFKA_CONTROLLER_QUORUM_VOTERS
+              value: "1@kafka-0.kafka-headless.{{ .Values.global.namespace }}.svc.cluster.local:9093"
+            - name: KAFKA_CONTROLLER_LISTENER_NAMES
+              value: "CONTROLLER"
+            # Must be 1 for a single-node cluster (can't replicate to more brokers
+            # than exist). Set to 3 in production multi-node setups.
+            - name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR
+              value: "1"
+            - name: KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR
+              value: "1"
+            - name: KAFKA_TRANSACTION_STATE_LOG_MIN_ISR
+              value: "1"
+            - name: KAFKA_LOG_DIRS
+              value: /var/lib/kafka/data
+            # KRaft cluster identity — generated once, stable forever.
+            # Generate: docker run --rm apache/kafka:3.9.0 /opt/kafka/bin/kafka-storage.sh random-uuid
+            - name: CLUSTER_ID
+              value: {{ .Values.kafka.clusterId | quote }}
+          readinessProbe:
+            tcpSocket:
+              port: 9092
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 9092
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          resources:
+            {{- toYaml .Values.kafka.resources | nindent 12 }}
+          volumeMounts:
+            - name: kafka-data
+              mountPath: /var/lib/kafka/data
+  volumeClaimTemplates:
+    - metadata:
+        name: kafka-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: {{ .Values.kafka.storage.storageClass }}
+        resources:
+          requests:
+            storage: {{ .Values.kafka.storage.size }}

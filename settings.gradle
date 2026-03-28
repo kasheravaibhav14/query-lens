@@ -1,0 +1,5 @@
+rootProject.name = 'query-lens'
+
+include 'tenant-api'
+include 'ingestion'
+include 'analysis-engine'

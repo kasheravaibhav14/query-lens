@@ -1,0 +1,100 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# values.yaml — Default configuration for the query-lens Helm chart.
+#
+# HOW THIS WORKS:
+#   Every template file (templates/**/*.yaml) references these values via
+#   {{ .Values.<key> }}. Helm merges this file with any override files you pass
+#   at install time:
+#
+#     helm install ql ./helm/query-lens -f values.yaml -f values-local.yaml
+#
+#   The last file wins on conflicts, so overrides only need the keys that change.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# ── Global ────────────────────────────────────────────────────────────────────
+global:
+  # Kubernetes namespace all resources are deployed into.
+  # Create it before installing: kubectl create namespace query-lens
+  namespace: query-lens
+
+# ── PostgreSQL ────────────────────────────────────────────────────────────────
+postgres:
+  image:
+    repository: postgres
+    tag: "16"
+  auth:
+    database: querylens
+    username: querylens
+    # Override this at deploy time — never commit real passwords:
+    #   helm install ql . --set postgres.auth.password=<secret>
+    password: changeme
+  storage:
+    size: 1Gi
+    # minikube ships with the "standard" StorageClass.
+    # For EKS use "gp3", for GKE use "pd-ssd".
+    storageClass: standard
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# ── Kafka (KRaft — no Zookeeper) ──────────────────────────────────────────────
+kafka:
+  image:
+    repository: apache/kafka
+    tag: "3.9.0"
+  # KRaft requires a base64-encoded cluster UUID, generated once per cluster.
+  # Generate your own: docker run --rm apache/kafka:3.9.0 /opt/kafka/bin/kafka-storage.sh random-uuid
+  clusterId: "MkU3OEVoblNTdGUwalVoaQ"
+  storage:
+    size: 2Gi
+    storageClass: standard
+  service:
+    # NodePort exposes Kafka on minikube's IP for local clients (e.g. kcat).
+    # In prod, switch to ClusterIP — apps inside the cluster connect directly.
+    type: NodePort
+    nodePort: 30092
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+
+# ── Tenant API ────────────────────────────────────────────────────────────────
+tenantApi:
+  image:
+    repository: query-lens/tenant-api
+    tag: "0.1.0"
+    # IfNotPresent = use the image already in Docker/minikube, don't pull.
+    # Change to Always in production so you always get the latest pushed image.
+    pullPolicy: IfNotPresent
+  replicas: 1
+  service:
+    port: 8080
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  hpa:
+    # HorizontalPodAutoscaler — disabled locally (no metrics-server in minikube
+    # by default). Enable in prod after running: minikube addons enable metrics-server
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 70
+
+# ── Ingress ───────────────────────────────────────────────────────────────────
+ingress:
+  enabled: true
+  className: nginx
+  # Add this to /etc/hosts pointing at $(minikube ip):
+  #   192.168.x.x  query-lens.local
+  host: query-lens.local

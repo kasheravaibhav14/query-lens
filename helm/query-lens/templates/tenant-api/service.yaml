@@ -1,0 +1,23 @@
+{{/*
+  ClusterIP Service for tenant-api.
+
+  The Ingress in ingress.yaml routes external HTTP traffic to this service.
+  Apps inside the cluster can also call tenant-api directly at:
+    http://tenant-api.query-lens.svc.cluster.local:8080
+*/}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: tenant-api
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "query-lens.labels" . | nindent 4 }}
+    app: tenant-api
+spec:
+  type: ClusterIP
+  selector:
+    app: tenant-api
+  ports:
+    - name: http
+      port: {{ .Values.tenantApi.service.port }}
+      targetPort: 8080

@@ -1,0 +1,4 @@
+// Analysis engine — scaffold coming next
+plugins {
+    id 'org.springframework.boot'
+}

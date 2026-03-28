@@ -1,0 +1,52 @@
+{{/*
+  CONCEPT: Ingress
+    An Ingress is a k8s resource that defines HTTP/HTTPS routing rules.
+    It does NOT do the routing itself — an Ingress Controller (here: NGINX)
+    watches Ingress resources and programs itself accordingly.
+
+  CONCEPT: IngressClass
+    In newer k8s (1.18+), you specify which controller handles this Ingress
+    via spec.ingressClassName. This allows multiple ingress controllers to
+    coexist in the same cluster.
+
+  CONCEPT: Load balancer for HTTP vs TCP
+    Ingress handles HTTP/HTTPS only. For raw TCP (Postgres :5432, Kafka :9092),
+    NGINX Ingress can proxy TCP via a ConfigMap, but this requires patching the
+    NGINX controller deployment — outside the scope of this chart.
+
+    Local alternative: use the NodePort on kafka (port 30092 → minikube ip).
+    Production alternative: expose Kafka/Postgres via a dedicated Service of
+    type LoadBalancer (cloud-provisioned NLB/ALB with TCP support).
+
+  CONCEPT: {{ if .Values.ingress.enabled }} gate
+    Lets you disable Ingress entirely (e.g. for a pure-internal deployment)
+    without touching template files.
+*/}}
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: query-lens-ingress
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "query-lens.labels" . | nindent 4 }}
+  annotations:
+    # Strip the /api prefix before forwarding to tenant-api.
+    # Without this, the app would receive /api/tenants instead of /tenants.
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  rules:
+    - host: {{ .Values.ingress.host }}
+      http:
+        paths:
+          # Routes: query-lens.local/api/** → tenant-api:8080/**
+          # The capture group ($2) is used by rewrite-target above.
+          - path: /api(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: tenant-api
+                port:
+                  number: {{ .Values.tenantApi.service.port }}
+{{- end }}

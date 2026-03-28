@@ -1,0 +1,17 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# values-local.yaml — minikube overrides.
+#
+# Only keys that DIFFER from values.yaml are listed here.
+# Helm merges both files; this one wins on conflicts.
+#
+# Usage:
+#   helm install ql ./helm/query-lens -f values.yaml -f values-local.yaml
+# ═══════════════════════════════════════════════════════════════════════════════
+
+tenantApi:
+  image:
+    # Never = do not attempt to pull from a registry.
+    # Load the image manually first:
+    #   ./gradlew :tenant-api:bootBuildImage
+    #   minikube image load query-lens/tenant-api:0.1.0
+    pullPolicy: Never

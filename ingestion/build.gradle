@@ -1,0 +1,4 @@
+// gRPC ingestion service — scaffold coming next
+plugins {
+    id 'org.springframework.boot'
+}

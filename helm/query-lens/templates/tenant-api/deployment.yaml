@@ -1,0 +1,95 @@
+{{/*
+  CONCEPT: Deployment (vs StatefulSet)
+    tenant-api is stateless — it doesn't own any data. Deployments are correct
+    here because:
+      - Pod names can be random (no stable identity needed)
+      - All replicas are identical and interchangeable
+      - Scale up/down is fully flexible
+      - Rolling updates work without ordered restart
+
+  CONCEPT: env from secretKeyRef
+    DB credentials are never hardcoded in the image or spec. They're injected
+    at runtime from the postgres-secret created in postgres/secret.yaml.
+    The secret and deployment are in the same namespace, so the reference works.
+
+  CONCEPT: Spring Boot env var override convention
+    Spring Boot reads SPRING_DATASOURCE_URL and maps it to
+    spring.datasource.url. Environment variables override application.properties
+    automatically — no code change needed.
+
+  CONCEPT: image.pullPolicy
+    IfNotPresent — use cached image, don't pull (local dev with minikube load)
+    Always       — always pull from registry (production, CI)
+    Never        — never pull, fail if not present (strict local-only testing)
+*/}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tenant-api
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "query-lens.labels" . | nindent 4 }}
+    app: tenant-api
+spec:
+  replicas: {{ .Values.tenantApi.replicas }}
+  selector:
+    matchLabels:
+      app: tenant-api
+  template:
+    metadata:
+      labels:
+        app: tenant-api
+        {{- include "query-lens.selectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+        - name: tenant-api
+          image: "{{ .Values.tenantApi.image.repository }}:{{ .Values.tenantApi.image.tag }}"
+          imagePullPolicy: {{ .Values.tenantApi.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            # Spring Boot picks up SPRING_DATASOURCE_URL automatically.
+            # "postgres" is the ClusterIP Service name in postgres/service.yaml.
+            - name: SPRING_DATASOURCE_URL
+              value: "jdbc:postgresql://postgres.{{ .Values.global.namespace }}.svc.cluster.local:5432/{{ .Values.postgres.auth.database }}"
+            - name: SPRING_DATASOURCE_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: username
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: password
+            # Flyway runs migrations on startup — same credentials as datasource.
+            - name: SPRING_FLYWAY_URL
+              value: "jdbc:postgresql://postgres.{{ .Values.global.namespace }}.svc.cluster.local:5432/{{ .Values.postgres.auth.database }}"
+            - name: SPRING_FLYWAY_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: username
+            - name: SPRING_FLYWAY_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: password
+          # Readiness: don't send traffic until Spring Boot's /actuator/health
+          # returns 200. Prevents 502s during rolling updates.
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8080
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          # Liveness: restart the container if the app stops responding.
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8080
+            initialDelaySeconds: 40
+            periodSeconds: 15
+          resources:
+            {{- toYaml .Values.tenantApi.resources | nindent 12 }}

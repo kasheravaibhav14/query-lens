@@ -1,0 +1,98 @@
+{{/*
+  CONCEPT: StatefulSet (vs Deployment)
+    Use StatefulSet for stateful workloads (databases, message brokers).
+    Key guarantees over Deployment:
+      - Pods get stable, predictable names: postgres-0, postgres-1, ...
+      - Each pod gets its own PersistentVolumeClaim via volumeClaimTemplates
+      - Pods start/stop in order (postgres-0 before postgres-1)
+      - Stable DNS: postgres-0.postgres-headless.<namespace>.svc.cluster.local
+
+  CONCEPT: serviceName
+    Must match a headless Service (clusterIP: None). This is what gives each
+    pod its stable DNS entry. The headless service is defined in service.yaml.
+
+  CONCEPT: secretKeyRef
+    Pulls a value from a Secret at runtime. The pod never has the raw value
+    baked into its spec — it's injected by the kubelet when the container starts.
+
+  CONCEPT: toYaml | nindent
+    .Values.postgres.resources is a YAML object (map). toYaml serialises it
+    back to a YAML string, and nindent adds the right indentation so the block
+    sits correctly inside the container spec. This is the standard Helm pattern
+    for embedding structured blocks (resources, affinity, tolerations, etc.).
+*/}}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "query-lens.labels" . | nindent 4 }}
+    app: postgres
+spec:
+  serviceName: postgres-headless   # must match the headless Service in service.yaml
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+        {{- include "query-lens.selectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+        - name: postgres
+          image: "{{ .Values.postgres.image.repository }}:{{ .Values.postgres.image.tag }}"
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: database
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: username
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: password
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          # Readiness probe: k8s only sends traffic once postgres accepts connections.
+          # Without this, the tenant-api pod may crash-loop trying to connect too early.
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "$(POSTGRES_USER)", "-d", "$(POSTGRES_DB)"]
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          # Liveness probe: restarts the container if postgres stops responding.
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "$(POSTGRES_USER)", "-d", "$(POSTGRES_DB)"]
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.postgres.resources | nindent 12 }}
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+  # volumeClaimTemplates: the StatefulSet killer feature.
+  # Each pod replica gets its own PVC created automatically.
+  # Unlike a Deployment with a shared PVC, postgres-0 and postgres-1
+  # each get isolated storage — exactly what a database needs.
+  volumeClaimTemplates:
+    - metadata:
+        name: postgres-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: {{ .Values.postgres.storage.storageClass }}
+        resources:
+          requests:
+            storage: {{ .Values.postgres.storage.size }}

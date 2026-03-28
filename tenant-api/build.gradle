@@ -1,0 +1,29 @@
+plugins {
+    id 'org.springframework.boot'
+}
+
+// Configures the bootBuildImage task provided by the Spring Boot Gradle plugin.
+// Uses Cloud Native Buildpacks — no Dockerfile needed.
+// Run: ./gradlew :tenant-api:bootBuildImage
+// Then for minikube: minikube image load query-lens/tenant-api:0.1.0
+bootBuildImage {
+    imageName = "query-lens/tenant-api:${version}"
+}
+
+dependencies {
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+    implementation 'org.springframework.boot:spring-boot-flyway'
+    implementation 'org.flywaydb:flyway-core'
+    implementation 'org.flywaydb:flyway-database-postgresql'
+    runtimeOnly 'org.postgresql:postgresql'
+    developmentOnly 'org.springframework.boot:spring-boot-devtools'
+    annotationProcessor 'org.springframework.boot:spring-boot-configuration-processor'
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.springframework.boot:spring-boot-testcontainers'
+    testImplementation 'org.testcontainers:junit-jupiter:1.20.4'
+    testImplementation 'org.testcontainers:postgresql:1.20.4'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
