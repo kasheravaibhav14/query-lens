@@ -1,5 +1,6 @@
-package com.querylens.tenantapi.model;
+package com.querylens.tenantapiclient.model;
 
+import com.querylens.infra.model.DatabaseType;
 import jakarta.persistence.*;
 
 import java.time.LocalDateTime;

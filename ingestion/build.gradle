@@ -1,4 +1,23 @@
-// gRPC ingestion service — scaffold coming next
 plugins {
     id 'org.springframework.boot'
+}
+
+bootBuildImage {
+    imageName = "query-lens/ingestion:${version}"
+}
+
+dependencies {
+    implementation project(':infra')
+    implementation project(':tenant-api-client')
+    implementation libs.spring.boot.starter.web
+    implementation libs.spring.boot.starter.actuator
+    implementation libs.spring.boot.starter.validation
+    implementation libs.jackson.databind
+    implementation libs.spring.boot.starter.data.jpa
+    runtimeOnly libs.postgresql
+    implementation libs.spring.kafka
+    developmentOnly libs.spring.boot.devtools
+    annotationProcessor libs.spring.boot.configuration.processor
+    testImplementation libs.spring.boot.starter.test
+    testRuntimeOnly libs.junit.platform.launcher
 }

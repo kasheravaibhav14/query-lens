@@ -1,6 +1,6 @@
-package com.querylens.tenantapi.repository;
+package com.querylens.tenantapiclient.repository;
 
-import com.querylens.tenantapi.model.Tenant;
+import com.querylens.tenantapiclient.model.Tenant;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.Optional;

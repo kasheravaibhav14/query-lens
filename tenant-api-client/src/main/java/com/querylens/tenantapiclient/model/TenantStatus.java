@@ -1,4 +1,4 @@
-package com.querylens.tenantapi.model;
+package com.querylens.tenantapiclient.model;
 
 public enum TenantStatus {
     ACTIVE,

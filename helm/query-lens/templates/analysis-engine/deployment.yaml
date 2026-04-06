@@ -1,0 +1,51 @@
+{{/*
+  analysis-engine is stateless — consumes from Kafka, writes to ClickHouse.
+  No Postgres dependency. ClickHouse connection activated via env var.
+*/}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: analysis-engine
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "query-lens.labels" . | nindent 4 }}
+    app: analysis-engine
+spec:
+  replicas: {{ .Values.analysisEngine.replicas }}
+  selector:
+    matchLabels:
+      app: analysis-engine
+  template:
+    metadata:
+      labels:
+        app: analysis-engine
+        {{- include "query-lens.selectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+        - name: analysis-engine
+          image: "{{ .Values.analysisEngine.image.repository }}:{{ .Values.analysisEngine.image.tag }}"
+          imagePullPolicy: {{ .Values.analysisEngine.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8083
+          env:
+            - name: SPRING_KAFKA_BOOTSTRAP_SERVERS
+              value: "kafka.{{ .Values.global.namespace }}.svc.cluster.local:9092"
+            - name: QUERY_LENS_CLICKHOUSE_ENABLED
+              value: "true"
+            - name: QUERY_LENS_CLICKHOUSE_URL
+              value: "jdbc:clickhouse://clickhouse.{{ .Values.global.namespace }}.svc.cluster.local:8123/default"
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8083
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8083
+            initialDelaySeconds: 40
+            periodSeconds: 15
+          resources:
+            {{- toYaml .Values.analysisEngine.resources | nindent 12 }}

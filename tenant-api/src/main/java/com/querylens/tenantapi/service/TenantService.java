@@ -1,18 +1,19 @@
 package com.querylens.tenantapi.service;
 
+import com.google.common.hash.Hashing;
 import com.querylens.tenantapi.dto.RegisterTenantRequest;
 import com.querylens.tenantapi.dto.RegisterTenantResponse;
 import com.querylens.tenantapi.dto.TenantResponse;
 import com.querylens.tenantapi.dto.ValidateApiKeyRequest;
-import com.querylens.tenantapi.model.TenantStatus;
-import com.querylens.tenantapi.model.Tenant;
-import com.querylens.tenantapi.repository.TenantRepository;
+import com.querylens.tenantapi.kafka.KafkaTopicProvisioningService;
+import com.querylens.tenantapiclient.model.Tenant;
+import com.querylens.tenantapiclient.model.TenantStatus;
+import com.querylens.tenantapiclient.repository.TenantRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.util.HexFormat;
 import java.util.UUID;
@@ -21,10 +22,13 @@ import java.util.UUID;
 public class TenantService {
 
     private final TenantRepository tenantRepository;
+    private final KafkaTopicProvisioningService kafkaTopicProvisioningService;
     private final SecureRandom secureRandom = new SecureRandom();
 
-    public TenantService(TenantRepository tenantRepository) {
+    @Autowired
+    public TenantService(TenantRepository tenantRepository, KafkaTopicProvisioningService kafkaTopicProvisioningService) {
         this.tenantRepository = tenantRepository;
+        this.kafkaTopicProvisioningService = kafkaTopicProvisioningService;
     }
 
     @Transactional
@@ -34,7 +38,7 @@ public class TenantService {
         }
 
         String rawApiKey = generateApiKey();
-        String hashedApiKey = sha256(rawApiKey);
+        String hashedApiKey = Hashing.sha256().hashString(rawApiKey, StandardCharsets.UTF_8).toString();
 
         Tenant tenant = new Tenant();
         tenant.setName(request.name());
@@ -44,21 +48,15 @@ public class TenantService {
 
         tenant = tenantRepository.save(tenant);
 
-        return new RegisterTenantResponse(
-                tenant.getId(),
-                tenant.getName(),
-                tenant.getDescription(),
-                rawApiKey,  // returned once — caller must store it
-                tenant.getDatabaseType(),
-                tenant.getCreatedAt()
-        );
+        kafkaTopicProvisioningService.provisionTopicAsync(tenant.getId());
+
+        return new RegisterTenantResponse(tenant.getId(), tenant.getName(), tenant.getDescription(), rawApiKey, tenant.getDatabaseType(), tenant.getCreatedAt());
     }
 
     @Transactional(readOnly = true)
     public TenantResponse validateApiKey(ValidateApiKeyRequest request) {
-        String hash = sha256(request.apiKey());
-        Tenant tenant = tenantRepository.findByApiKeyHash(hash)
-                .orElseThrow(() -> new IllegalArgumentException("Invalid API key"));
+        String hash = Hashing.sha256().hashString(request.apiKey(), StandardCharsets.UTF_8).toString();
+        Tenant tenant = tenantRepository.findByApiKeyHash(hash).orElseThrow(() -> new IllegalArgumentException("Invalid API key"));
         if (tenant.getStatus() != TenantStatus.ACTIVE) {
             throw new IllegalStateException("Tenant is suspended: " + tenant.getId());
         }
@@ -67,8 +65,7 @@ public class TenantService {
 
     @Transactional(readOnly = true)
     public TenantResponse getById(UUID id) {
-        Tenant tenant = tenantRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Tenant not found: " + id));
+        Tenant tenant = tenantRepository.findById(id).orElseThrow(() -> new IllegalArgumentException("Tenant not found: " + id));
         return toResponse(tenant);
     }
 
@@ -78,24 +75,7 @@ public class TenantService {
         return "ql_" + HexFormat.of().formatHex(bytes);
     }
 
-    private String sha256(String input) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] hash = digest.digest(input.getBytes(StandardCharsets.UTF_8));
-            return HexFormat.of().formatHex(hash);
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException("SHA-256 not available", e);
-        }
-    }
-
     private TenantResponse toResponse(Tenant tenant) {
-        return new TenantResponse(
-                tenant.getId(),
-                tenant.getName(),
-                tenant.getDescription(),
-                tenant.getStatus(),
-                tenant.getDatabaseType(),
-                tenant.getCreatedAt()
-        );
+        return new TenantResponse(tenant.getId(), tenant.getName(), tenant.getDescription(), tenant.getStatus(), tenant.getDatabaseType(), tenant.getCreatedAt());
     }
 }

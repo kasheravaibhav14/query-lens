@@ -91,6 +91,56 @@ tenantApi:
     maxReplicas: 5
     targetCPUUtilizationPercentage: 70
 
+# ── Ingestion ─────────────────────────────────────────────────────────────────
+ingestion:
+  image:
+    repository: query-lens/ingestion
+    tag: "0.1.0"
+    pullPolicy: IfNotPresent
+  replicas: 1
+  service:
+    port: 8082
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# ── Analysis Engine ────────────────────────────────────────────────────────────
+analysisEngine:
+  image:
+    repository: query-lens/analysis-engine
+    tag: "0.1.0"
+    pullPolicy: IfNotPresent
+  replicas: 1
+  service:
+    port: 8083
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+
+# ── ClickHouse ────────────────────────────────────────────────────────────────
+clickhouse:
+  image:
+    repository: clickhouse/clickhouse-server
+    tag: "24.3"
+  storage:
+    size: 5Gi
+    storageClass: standard
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+
 # ── Ingress ───────────────────────────────────────────────────────────────────
 ingress:
   enabled: true

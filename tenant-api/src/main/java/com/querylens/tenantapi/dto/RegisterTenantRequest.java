@@ -1,6 +1,6 @@
 package com.querylens.tenantapi.dto;
 
-import com.querylens.tenantapi.model.DatabaseType;
+import com.querylens.infra.model.DatabaseType;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;

@@ -1,4 +1,4 @@
-package com.querylens.tenantapi.model;
+package com.querylens.infra.model;
 
 public enum DatabaseType {
     POSTGRES,

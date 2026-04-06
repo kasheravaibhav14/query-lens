@@ -1,0 +1,16 @@
+plugins {
+    id 'java-library'
+    id 'org.springframework.boot'
+}
+
+// Library module — disable fat JAR, enable plain JAR
+bootJar.enabled = false
+jar.enabled = true
+
+dependencies {
+    implementation libs.spring.context
+    implementation libs.spring.web
+    implementation libs.spring.boot.autoconfigure
+    implementation libs.jackson.databind
+    implementation libs.jackson.datatype.jsr310
+}

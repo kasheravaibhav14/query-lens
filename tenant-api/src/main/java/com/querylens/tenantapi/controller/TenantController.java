@@ -6,6 +6,7 @@ import com.querylens.tenantapi.dto.TenantResponse;
 import com.querylens.tenantapi.dto.ValidateApiKeyRequest;
 import com.querylens.tenantapi.service.TenantService;
 import jakarta.validation.Valid;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -18,6 +19,7 @@ public class TenantController {
 
     private final TenantService tenantService;
 
+    @Autowired
     public TenantController(TenantService tenantService) {
         this.tenantService = tenantService;
     }

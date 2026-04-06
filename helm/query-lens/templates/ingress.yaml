@@ -49,4 +49,18 @@ spec:
                 name: tenant-api
                 port:
                   number: {{ .Values.tenantApi.service.port }}
+          - path: /ingest(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: ingestion
+                port:
+                  number: {{ .Values.ingestion.service.port }}
+          - path: /analyze(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: analysis-engine
+                port:
+                  number: {{ .Values.analysisEngine.service.port }}
 {{- end }}

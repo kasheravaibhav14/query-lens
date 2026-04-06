@@ -1,4 +1,22 @@
-// Analysis engine — scaffold coming next
+// Analysis engine — Kafka consumer + ClickHouse + rule engine + REST API
 plugins {
     id 'org.springframework.boot'
+}
+
+bootBuildImage {
+    imageName = "query-lens/analysis-engine:${version}"
+}
+
+dependencies {
+    implementation project(':infra')
+    implementation libs.spring.boot.starter.web
+    implementation libs.spring.boot.starter.actuator
+    implementation libs.spring.boot.starter.jdbc
+    implementation libs.spring.kafka
+    implementation libs.jackson.databind
+    implementation libs.jackson.datatype.jsr310
+    // TODO: verify clickhouse-jdbc version compatibility with Spring Boot 4.x / Java 25
+    implementation libs.clickhouse.jdbc
+    testImplementation libs.spring.boot.starter.test
+    testRuntimeOnly libs.junit.platform.launcher
 }

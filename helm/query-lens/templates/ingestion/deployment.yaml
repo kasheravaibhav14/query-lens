@@ -1,0 +1,60 @@
+{{/*
+  ingestion is stateless — plain Deployment, no stable identity needed.
+  Reads the same Postgres DB as tenant-api (read-only: API key validation only).
+  Writes to Kafka only.
+*/}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ingestion
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "query-lens.labels" . | nindent 4 }}
+    app: ingestion
+spec:
+  replicas: {{ .Values.ingestion.replicas }}
+  selector:
+    matchLabels:
+      app: ingestion
+  template:
+    metadata:
+      labels:
+        app: ingestion
+        {{- include "query-lens.selectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+        - name: ingestion
+          image: "{{ .Values.ingestion.image.repository }}:{{ .Values.ingestion.image.tag }}"
+          imagePullPolicy: {{ .Values.ingestion.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8082
+          env:
+            - name: SPRING_DATASOURCE_URL
+              value: "jdbc:postgresql://postgres.{{ .Values.global.namespace }}.svc.cluster.local:5432/{{ .Values.postgres.auth.database }}"
+            - name: SPRING_DATASOURCE_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: username
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: password
+            - name: SPRING_KAFKA_BOOTSTRAP_SERVERS
+              value: "kafka.{{ .Values.global.namespace }}.svc.cluster.local:9092"
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8082
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8082
+            initialDelaySeconds: 40
+            periodSeconds: 15
+          resources:
+            {{- toYaml .Values.ingestion.resources | nindent 12 }}
