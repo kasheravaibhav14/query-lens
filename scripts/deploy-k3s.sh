@@ -27,8 +27,10 @@ command -v helm &>/dev/null || { echo "helm not found. Run: ./scripts/setup-linu
 
 # ── Build JARs ────────────────────────────────────────────────────────────────
 log "Building all modules..."
+set +u
 # shellcheck source=/dev/null
 source "$HOME/.sdkman/bin/sdkman-init.sh"
+set -u
 ./gradlew build -x test
 
 # ── Build OCI images (Cloud Native Buildpacks — no Dockerfile needed) ─────────

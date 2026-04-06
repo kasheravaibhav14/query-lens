@@ -54,8 +54,11 @@ if [ ! -d "$HOME/.sdkman" ]; then
   curl -s "https://get.sdkman.io" | bash
 fi
 
+# SDKMAN's init script uses unbound variables internally — must disable -u temporarily
+set +u
 # shellcheck source=/dev/null
 source "$HOME/.sdkman/bin/sdkman-init.sh"
+set -u
 
 if ! sdk list java | grep -q "25.*tem.*installed"; then
   log "Installing Java 25 (Temurin)..."
