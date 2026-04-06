@@ -154,6 +154,38 @@ docker exec kafka-local /opt/kafka/bin/kafka-console-consumer.sh \
 
 ---
 
+## End-to-end smoke test (all services)
+
+Runs the full pipeline: register tenant → ingest MongoDB COLLSCAN logs → verify `collscan_missing_index` finding.
+
+### Setup
+
+All three services must be running (tenant-api :8081, ingestion :8082, analysis-engine :8083) plus Kafka + Postgres. Requires `jq`.
+
+### Run
+
+```bash
+# Local
+./scripts/smoke-test.sh
+
+# Against Raspberry Pi (or any remote host)
+./scripts/smoke-test.sh --host 192.168.1.100
+```
+
+### Expected outcome
+
+```
+[PASS] Registered tenant: tenantId=<uuid>
+[PASS] Ingest accepted (204)
+[PASS] Invalid API key correctly rejected (401)
+[PASS] Analyze returned 200
+[PASS] Rule fired: collscan_missing_index
+```
+
+If findings come back empty, the pipeline processed before the window filled — wait a few seconds and re-run the ingest + analyze steps manually, or just re-run the script (it registers a new tenant each time).
+
+---
+
 ## ClickHouse — local setup
 
 ### Setup

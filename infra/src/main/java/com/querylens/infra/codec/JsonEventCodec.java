@@ -9,9 +9,8 @@ public class JsonEventCodec implements EventCodec {
 
     private final ObjectMapper objectMapper;
 
-    public JsonEventCodec() {
-        this.objectMapper = new ObjectMapper()
-                .registerModule(new JavaTimeModule());
+    public JsonEventCodec(ObjectMapper objectMapper) {
+        this.objectMapper = objectMapper;
     }
 
     @Override

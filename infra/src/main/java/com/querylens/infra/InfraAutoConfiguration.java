@@ -1,5 +1,7 @@
 package com.querylens.infra;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.querylens.infra.async.QueryLensExecutorService;
 import com.querylens.infra.cache.CacheRefreshController;
 import com.querylens.infra.cache.CacheRefreshable;
@@ -32,7 +34,13 @@ public class InfraAutoConfiguration {
 
     @Bean
     @Primary
-    public EventCodec jsonEventCodec() {
-        return new JsonEventCodec();
+    public ObjectMapper objectMapper() {
+        return new ObjectMapper().registerModule(new JavaTimeModule());
+    }
+
+    @Bean
+    @Primary
+    public EventCodec jsonEventCodec(ObjectMapper objectMapper) {
+        return new JsonEventCodec(objectMapper);
     }
 }

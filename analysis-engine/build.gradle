@@ -15,8 +15,11 @@ dependencies {
     implementation libs.spring.kafka
     implementation libs.jackson.databind
     implementation libs.jackson.datatype.jsr310
-    // TODO: verify clickhouse-jdbc version compatibility with Spring Boot 4.x / Java 25
-    implementation libs.clickhouse.jdbc
+    // clickhouse-jdbc bundles its own slf4j/logback — exclude to avoid classloader conflict with Spring Boot's managed versions
+    implementation(libs.clickhouse.jdbc) {
+        exclude group: 'ch.qos.logback'
+        exclude group: 'org.slf4j'
+    }
     testImplementation libs.spring.boot.starter.test
     testRuntimeOnly libs.junit.platform.launcher
 }
