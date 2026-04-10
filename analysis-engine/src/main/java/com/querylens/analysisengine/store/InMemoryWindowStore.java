@@ -10,6 +10,13 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
 
+/**
+ * Single-replica constraint: this store is JVM-local. Running more than one analysis-engine
+ * replica will split Kafka partition assignments across instances, meaning each instance only
+ * sees a fraction of a tenant's logs. GET /analyze on a replica that holds no logs for a tenant
+ * will return empty findings. If horizontal scaling is ever needed, replace this with a
+ * co-located state store (e.g. Kafka Streams) or an external store (e.g. Redis sorted sets).
+ */
 @Component
 public class InMemoryWindowStore {
 
