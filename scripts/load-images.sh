@@ -1,6 +1,6 @@
 #!/bin/bash
 # load-images.sh — Import pre-built app image tars into k3s, run Helm, apply migrations.
-# Run on the Pi, from the repo root. Triggered automatically by build-mac.sh.
+# Run on the Pi, from the repo root.
 #
 # Usage:
 #   ./scripts/load-images.sh
@@ -27,7 +27,7 @@ command -v helm &>/dev/null || { echo "helm not found. Run: ./scripts/setup-linu
 for module in "${APP_MODULES[@]}"; do
   TAR="$IMAGES_DIR/${module}.tar"
   if [[ ! -f "$TAR" ]]; then
-    echo "ERROR: $TAR not found. Run build-mac.sh first."; exit 1
+    echo "ERROR: $TAR not found. Build the images first and copy tars to $IMAGES_DIR."; exit 1
   fi
   log "Importing $module from $TAR..."
   sudo k3s ctr images import "$TAR"
