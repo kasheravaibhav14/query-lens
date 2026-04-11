@@ -20,4 +20,4 @@ spec:
   ports:
     - name: http
       port: {{ .Values.tenantApi.service.port }}
-      targetPort: 8080
+      targetPort: {{ .Values.tenantApi.service.port }}

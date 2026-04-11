@@ -1,0 +1,59 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# values-pi.yaml — Raspberry Pi / k3s overrides.
+#
+# k3s ships with:
+#   - local-path   StorageClass (not "standard")
+#   - Traefik      ingress controller (disabled — we install nginx-ingress instead
+#                  for compatibility with the rewrite annotations in ingress.yaml)
+#
+# Usage (via deploy-k3s.sh — called automatically):
+#   helm upgrade --install query-lens ./helm/query-lens \
+#     -f helm/query-lens/values.yaml \
+#     -f helm/query-lens/values-pi.yaml
+# ═══════════════════════════════════════════════════════════════════════════════
+
+postgres:
+  storage:
+    storageClass: local-path
+
+kafka:
+  storage:
+    storageClass: local-path
+  service:
+    # No need for NodePort on Pi — all services are inside the same cluster.
+    type: ClusterIP
+
+clickhouse:
+  storage:
+    storageClass: local-path
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      # Reduced from 2Gi — Pi shares RAM with nextcloud
+      memory: 1Gi
+
+tenantApi:
+  image:
+    # Images are imported into k3s containerd via deploy-k3s.sh.
+    # Never = do not attempt to pull from a registry.
+    pullPolicy: Never
+
+ingestion:
+  image:
+    pullPolicy: Never
+
+analysisEngine:
+  image:
+    pullPolicy: Never
+
+ingress:
+  enabled: true
+  # nginx-ingress is installed by setup-linux.sh --k3s (Traefik is disabled).
+  className: nginx
+  # Add to /etc/hosts on any client machine:
+  #   <pi-ip>  query-lens.local
+  # Or access directly via Pi IP: http://<pi-ip>/api/v1/tenants/register
+  host: query-lens.local

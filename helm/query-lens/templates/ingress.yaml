@@ -30,34 +30,30 @@ metadata:
   namespace: {{ .Values.global.namespace }}
   labels:
     {{- include "query-lens.labels" . | nindent 4 }}
-  annotations:
-    # Strip the /api prefix before forwarding to tenant-api.
-    # Without this, the app would receive /api/tenants instead of /tenants.
-    nginx.ingress.kubernetes.io/rewrite-target: /$2
+  annotations: {}
 spec:
   ingressClassName: {{ .Values.ingress.className }}
   rules:
     - host: {{ .Values.ingress.host }}
       http:
         paths:
-          # Routes: query-lens.local/api/** → tenant-api:8080/**
-          # The capture group ($2) is used by rewrite-target above.
-          - path: /api(/|$)(.*)
-            pathType: ImplementationSpecific
+          # TenantController is mapped at /api/v1/tenants — no prefix stripping.
+          - path: /api
+            pathType: Prefix
             backend:
               service:
                 name: tenant-api
                 port:
                   number: {{ .Values.tenantApi.service.port }}
-          - path: /ingest(/|$)(.*)
-            pathType: ImplementationSpecific
+          - path: /ingest
+            pathType: Prefix
             backend:
               service:
                 name: ingestion
                 port:
                   number: {{ .Values.ingestion.service.port }}
-          - path: /analyze(/|$)(.*)
-            pathType: ImplementationSpecific
+          - path: /analyze
+            pathType: Prefix
             backend:
               service:
                 name: analysis-engine

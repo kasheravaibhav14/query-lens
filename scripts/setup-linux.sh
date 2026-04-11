@@ -45,6 +45,11 @@ else
   warn "Added $USER to 'docker' group. Re-login or run: newgrp docker"
 fi
 
+# Note: Docker data-root cannot be moved to the shared drive — it is exFAT,
+# which does not support Linux file ownership (chown). Docker stays on the SD card.
+# The deploy script removes app images from Docker immediately after saving them
+# to the shared drive, so Docker's footprint stays small.
+
 # Ensure Docker daemon is running
 sudo systemctl enable --now docker
 
@@ -71,22 +76,36 @@ log "Java: $(java -version 2>&1 | head -1)"
 
 # ── k3s + Helm (optional) ─────────────────────────────────────────────────────
 if [[ "$INSTALL_K3S" == "true" ]]; then
+
+  # ── k3s ─────────────────────────────────────────────────────────────────────
   if command -v k3s &>/dev/null; then
     warn "k3s already installed: $(k3s --version | head -1)"
   else
-    log "Installing k3s (lightweight Kubernetes)..."
-    curl -sfL https://get.k3s.io | sh -
+    log "Installing k3s (Traefik disabled — nginx-ingress used instead)..."
+    # Traefik is disabled: the Helm chart uses nginx ingress annotations which
+    # are not compatible with Traefik. nginx-ingress is installed below.
+    # --data-dir points k3s's containerd image store, PV storage, and pod logs
+    # at the shared drive so the SD card is never filled by k3s.
+    curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable=traefik --data-dir=$SHARED_PATH/k3s" sh -
 
     # Allow current user to run kubectl without sudo
     sudo mkdir -p "$HOME/.kube"
     sudo cp /etc/rancher/k3s/k3s.yaml "$HOME/.kube/config"
     sudo chown "$USER:$USER" "$HOME/.kube/config"
-    echo 'export KUBECONFIG=$HOME/.kube/config' >> "$HOME/.bashrc"
     export KUBECONFIG="$HOME/.kube/config"
+    # Persist for future shells
+    grep -qxF 'export KUBECONFIG=$HOME/.kube/config' "$HOME/.bashrc" \
+      || echo 'export KUBECONFIG=$HOME/.kube/config' >> "$HOME/.bashrc"
+    grep -qxF 'export KUBECONFIG=$HOME/.kube/config' "$HOME/.zshrc" 2>/dev/null \
+      || echo 'export KUBECONFIG=$HOME/.kube/config' >> "$HOME/.zshrc"
+
     log "k3s installed. Waiting for node to be ready..."
-    kubectl wait --for=condition=ready node --all --timeout=60s
+    kubectl wait --for=condition=ready node --all --timeout=90s
   fi
 
+  export KUBECONFIG="$HOME/.kube/config"
+
+  # ── Helm ─────────────────────────────────────────────────────────────────────
   if command -v helm &>/dev/null; then
     warn "Helm already installed: $(helm version --short)"
   else
@@ -95,24 +114,51 @@ if [[ "$INSTALL_K3S" == "true" ]]; then
     log "Helm: $(helm version --short)"
   fi
 
-  # ── Local image registry for k3s ────────────────────────────────────────────
-  # k3s uses containerd, not Docker. Images built with Docker must be imported.
-  # Option A (used by deploy-linux.sh): docker save | k3s ctr images import
-  # Option B (set up once here): local registry on :5000
-  log "Setting up local Docker registry on :5000 for k3s..."
-  docker run -d --name registry --restart=always -p 5000:5000 registry:2 2>/dev/null \
-    || warn "Registry already running"
+  # ── nginx-ingress controller ──────────────────────────────────────────────────
+  # Runs as a DaemonSet with hostNetwork=true so it binds port 80 on the Pi's IP.
+  # This is what makes http://query-lens.local work from any machine on the LAN.
+  if helm status ingress-nginx -n ingress-nginx &>/dev/null; then
+    warn "nginx-ingress already installed"
+  else
+    log "Installing nginx-ingress controller..."
+    helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx 2>/dev/null || true
+    helm repo update ingress-nginx
+    helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
+      --namespace ingress-nginx --create-namespace \
+      --set controller.hostNetwork=true \
+      --set controller.kind=DaemonSet \
+      --set controller.service.type=ClusterIP \
+      --wait --timeout=120s
+    log "nginx-ingress installed"
+  fi
 
-  # Tell k3s to trust the local insecure registry
-  sudo mkdir -p /etc/rancher/k3s
-  cat <<EOF | sudo tee /etc/rancher/k3s/registries.yaml
-mirrors:
-  "localhost:5000":
-    endpoint:
-      - "http://localhost:5000"
-EOF
-  sudo systemctl restart k3s
-  log "k3s configured to pull from localhost:5000"
+  # ── Configure local-path provisioner to use shared drive ─────────────────────
+  # k3s ships with a local-path StorageClass. By default it stores PVs under
+  # /var/lib/rancher/k3s/storage — the root filesystem (only 58GB, 90% full).
+  # We redirect it to the 373GB external drive at /media/kashrpi/shared.
+  SHARED_PATH="/media/kashrpi/shared/query-lens-data"
+  log "Configuring local-path provisioner → $SHARED_PATH"
+  sudo mkdir -p "$SHARED_PATH/images"   # OCI image tarballs — app + infra
+  sudo mkdir -p "$SHARED_PATH/gradle"   # Gradle user home (caches, wrapper, daemon)
+  sudo chown -R kashrpi:kashrpi "$SHARED_PATH"
+
+  # Redirect Gradle's user home to the shared drive so caches don't fill the SD card.
+  grep -qxF "export GRADLE_USER_HOME=$SHARED_PATH/gradle" "$HOME/.bashrc" \
+    || echo "export GRADLE_USER_HOME=$SHARED_PATH/gradle" >> "$HOME/.bashrc"
+  grep -qxF "export GRADLE_USER_HOME=$SHARED_PATH/gradle" "$HOME/.zshrc" 2>/dev/null \
+    || echo "export GRADLE_USER_HOME=$SHARED_PATH/gradle" >> "$HOME/.zshrc"
+  export GRADLE_USER_HOME="$SHARED_PATH/gradle"
+  log "GRADLE_USER_HOME → $GRADLE_USER_HOME"
+
+  # Patch the provisioner's ConfigMap so all new PVCs land on the shared drive.
+  kubectl patch configmap local-path-config -n kube-system --type merge \
+    -p "{\"data\":{\"config.json\":\"{\\\"nodePathMap\\\":[{\\\"node\\\":\\\"DEFAULT_PATH_FOR_NON_LISTED_NODES\\\",\\\"paths\\\":[\\\"$SHARED_PATH\\\"]}]}\"}}"
+
+  # Restart the provisioner to pick up the new path.
+  kubectl rollout restart deployment/local-path-provisioner -n kube-system
+  kubectl rollout status  deployment/local-path-provisioner -n kube-system --timeout=60s
+  log "local-path provisioner now using $SHARED_PATH"
+
 fi
 
 # ── Done ──────────────────────────────────────────────────────────────────────
@@ -123,7 +169,10 @@ echo "  1. Clone the repo (if not already done):"
 echo "     git clone <repo-url> query-lens && cd query-lens"
 echo ""
 if [[ "$INSTALL_K3S" == "true" ]]; then
-echo "  2. Build and deploy via Kubernetes (Helm):"
+echo "  2. Reload your shell so kubectl + KUBECONFIG are active:"
+echo "     source ~/.zshrc   # or ~/.bashrc"
+echo ""
+echo "  3. Build images and deploy:"
 echo "     ./scripts/deploy-k3s.sh"
 else
 echo "  2. Start infrastructure and services:"
